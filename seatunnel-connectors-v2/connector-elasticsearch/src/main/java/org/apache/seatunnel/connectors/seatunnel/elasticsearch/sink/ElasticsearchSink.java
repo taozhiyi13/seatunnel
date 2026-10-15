@@ -98,7 +98,7 @@ public class ElasticsearchSink
         TablePath tablePath = TablePath.of("", catalogTable.getTableId().getTableName());
         return Optional.of(
                 new DefaultSaveModeHandler(
-                        schemaSaveMode, dataSaveMode, catalog, tablePath, null, null));
+                        schemaSaveMode, dataSaveMode, catalog, tablePath, catalogTable, null));
     }
 
     @Override

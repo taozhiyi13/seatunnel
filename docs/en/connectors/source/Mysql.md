@@ -65,7 +65,21 @@ Read external data source data through JDBC.
 | DATE                                                                                          | DATE                                                                                                                                               |
 | TIME(s)                                                                                       | TIME(s)                                                                                                                                            |
 | DATETIME<br/>TIMESTAMP(s)                                                                     | TIMESTAMP(s)                                                                                                                                       |
-| TINYBLOB<br/>MEDIUMBLOB<br/>BLOB<br/>LONGBLOB<br/>BINARY<br/>VARBINAR<br/>BIT(n)<br/>GEOMETRY | BYTES                                                                                                                                              |
+| TINYBLOB<br/>MEDIUMBLOB<br/>BLOB<br/>LONGBLOB<br/>BINARY<br/>VARBINAR<br/>BIT(n)              | BYTES                                                                                                                                              |
+| GEOMETRY                                                                                      | GEOMETRY(GEOMETRY)                                                                                                                                 |
+| POINT                                                                                         | GEOMETRY(POINT)                                                                                                                                    |
+| LINESTRING                                                                                    | GEOMETRY(LINESTRING)                                                                                                                               |
+| POLYGON                                                                                       | GEOMETRY(POLYGON)                                                                                                                                  |
+| MULTIPOINT                                                                                    | GEOMETRY(MULTIPOINT)                                                                                                                               |
+| MULTILINESTRING                                                                               | GEOMETRY(MULTILINESTRING)                                                                                                                          |
+| MULTIPOLYGON                                                                                  | GEOMETRY(MULTIPOLYGON)                                                                                                                             |
+| GEOMETRYCOLLECTION<br/>GEOMCOLLECTION                                                         | GEOMETRY(GEOMETRYCOLLECTION)                                                                                                                       |
+
+A spatial value is an unsigned 32-bit SRID plus standard WKB. MySQL returns the SRID as a
+little-endian prefix in front of the WKB, and the JDBC source strips that prefix. The value keeps
+its SRID; this source does not transform coordinates. When the column declares an SRID
+(`information_schema.COLUMNS.SRS_ID`, MySQL 8.0+), that SRID is stored in the column options as
+`srid`.
 
 ## Source Options
 

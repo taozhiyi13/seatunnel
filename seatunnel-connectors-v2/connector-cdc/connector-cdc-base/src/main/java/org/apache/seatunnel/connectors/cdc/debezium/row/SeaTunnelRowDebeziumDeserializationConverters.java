@@ -23,6 +23,7 @@ import org.apache.seatunnel.api.table.type.ArrayType;
 import org.apache.seatunnel.api.table.type.SeaTunnelDataType;
 import org.apache.seatunnel.api.table.type.SeaTunnelRow;
 import org.apache.seatunnel.api.table.type.SeaTunnelRowType;
+import org.apache.seatunnel.api.table.type.SqlType;
 import org.apache.seatunnel.connectors.cdc.debezium.DebeziumDeserializationConverter;
 import org.apache.seatunnel.connectors.cdc.debezium.DebeziumDeserializationConverterFactory;
 import org.apache.seatunnel.connectors.cdc.debezium.MetadataConverter;
@@ -38,6 +39,7 @@ import io.debezium.data.SpecialValueDecimal;
 import io.debezium.data.VariableScaleDecimal;
 import io.debezium.data.geometry.Geography;
 import io.debezium.data.geometry.Geometry;
+import io.debezium.data.geometry.Point;
 import io.debezium.time.MicroTime;
 import io.debezium.time.MicroTimestamp;
 import io.debezium.time.NanoTime;
@@ -69,15 +71,17 @@ public class SeaTunnelRowDebeziumDeserializationConverters implements Serializab
             ZoneId serverTimeZone,
             DebeziumDeserializationConverterFactory userDefinedConverterFactory) {
         this.metadataConverters = metadataConverters;
-
-        this.physicalConverters =
-                Arrays.stream(physicalDataType.getFieldTypes())
-                        .map(
-                                type ->
-                                        createConverter(
-                                                type, serverTimeZone, userDefinedConverterFactory))
-                        .toArray(DebeziumDeserializationConverter[]::new);
         this.fieldNames = physicalDataType.getFieldNames();
+
+        SeaTunnelDataType<?>[] fieldTypes = physicalDataType.getFieldTypes();
+        this.physicalConverters = new DebeziumDeserializationConverter[fieldTypes.length];
+        for (int i = 0; i < fieldTypes.length; i++) {
+            this.physicalConverters[i] =
+                    fieldTypes[i].getSqlType() == SqlType.GEOMETRY
+                            ? wrapIntoNullableConverter(createGeometryConverter(fieldNames[i]))
+                            : createConverter(
+                                    fieldTypes[i], serverTimeZone, userDefinedConverterFactory);
+        }
     }
 
     public SeaTunnelRow convert(SourceRecord record, Struct struct, Schema schema)
@@ -177,6 +181,8 @@ public class SeaTunnelRowDebeziumDeserializationConverters implements Serializab
                 return convertToBinary();
             case DECIMAL:
                 return wrapNumericConverter(createDecimalConverter());
+            case GEOMETRY:
+                return createGeometryConverter("<unknown>");
             case ROW:
                 return createRowConverter(
                         (SeaTunnelRowType) type, serverTimeZone, userDefinedConverterFactory);
@@ -636,6 +642,46 @@ public class SeaTunnelRowDebeziumDeserializationConverters implements Serializab
                     throw new UnsupportedOperationException(
                             "Unsupported BYTES value type: " + dbzObj.getClass().getSimpleName());
                 }
+            }
+        };
+    }
+
+    private static DebeziumDeserializationConverter createGeometryConverter(String fieldName) {
+        return new DebeziumDeserializationConverter() {
+            private static final long serialVersionUID = 1L;
+
+            @Override
+            public Object convert(Object dbzObj, Schema schema) {
+                if (!(dbzObj instanceof Struct)) {
+                    throw new IllegalArgumentException(
+                            "Column ["
+                                    + fieldName
+                                    + "] expects a Debezium geometry Struct, but got "
+                                    + dbzObj.getClass().getName());
+                }
+                Struct struct = (Struct) dbzObj;
+                String logicalName = struct.schema().name();
+                if (!Geometry.LOGICAL_NAME.equals(logicalName)
+                        && !Point.LOGICAL_NAME.equals(logicalName)) {
+                    throw new IllegalArgumentException(
+                            "Column [" + fieldName + "] has unexpected schema " + logicalName);
+                }
+                Object srid = struct.get(Geometry.SRID_FIELD);
+                long actualSrid =
+                        srid == null ? 0L : Integer.toUnsignedLong(((Number) srid).intValue());
+                Object wkbField = struct.get(Geometry.WKB_FIELD);
+                byte[] wkb;
+                if (wkbField instanceof byte[]) {
+                    wkb = (byte[]) wkbField;
+                } else if (wkbField instanceof ByteBuffer) {
+                    ByteBuffer buffer = ((ByteBuffer) wkbField).duplicate();
+                    wkb = new byte[buffer.remaining()];
+                    buffer.get(wkb);
+                } else {
+                    throw new IllegalArgumentException(
+                            "Column [" + fieldName + "] has no WKB value");
+                }
+                return new org.apache.seatunnel.api.table.type.Geometry(actualSrid, wkb);
             }
         };
     }

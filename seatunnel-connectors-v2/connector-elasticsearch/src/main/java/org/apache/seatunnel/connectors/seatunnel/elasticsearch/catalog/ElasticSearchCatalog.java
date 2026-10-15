@@ -17,12 +17,15 @@
 
 package org.apache.seatunnel.connectors.seatunnel.elasticsearch.catalog;
 
+import org.apache.seatunnel.shade.com.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.seatunnel.shade.com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.seatunnel.shade.com.google.common.collect.Lists;
 
 import org.apache.seatunnel.api.configuration.ReadonlyConfig;
 import org.apache.seatunnel.api.configuration.util.ConfigUtil;
 import org.apache.seatunnel.api.table.catalog.Catalog;
 import org.apache.seatunnel.api.table.catalog.CatalogTable;
+import org.apache.seatunnel.api.table.catalog.Column;
 import org.apache.seatunnel.api.table.catalog.InfoPreviewResult;
 import org.apache.seatunnel.api.table.catalog.PhysicalColumn;
 import org.apache.seatunnel.api.table.catalog.PreviewResult;
@@ -35,6 +38,7 @@ import org.apache.seatunnel.api.table.catalog.exception.DatabaseNotExistExceptio
 import org.apache.seatunnel.api.table.catalog.exception.TableAlreadyExistException;
 import org.apache.seatunnel.api.table.catalog.exception.TableNotExistException;
 import org.apache.seatunnel.api.table.converter.BasicTypeDefine;
+import org.apache.seatunnel.api.table.type.SqlType;
 import org.apache.seatunnel.connectors.seatunnel.elasticsearch.client.EsRestClient;
 import org.apache.seatunnel.connectors.seatunnel.elasticsearch.client.EsType;
 import org.apache.seatunnel.connectors.seatunnel.elasticsearch.dto.ElasticsearchClusterInfo;
@@ -62,6 +66,8 @@ import static org.apache.seatunnel.shade.com.google.common.base.Preconditions.ch
 public class ElasticSearchCatalog implements Catalog {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ElasticSearchCatalog.class);
+
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final String catalogName;
     private final String defaultDatabase;
@@ -188,7 +194,39 @@ public class ElasticSearchCatalog implements Catalog {
             }
             return;
         }
-        esRestClient.createIndex(tablePath.getTableName());
+        String mapping = buildGeometryMapping(table);
+        if (mapping == null) {
+            esRestClient.createIndex(tablePath.getTableName());
+        } else {
+            esRestClient.createIndex(tablePath.getTableName(), mapping);
+        }
+    }
+
+    /**
+     * Builds an index mapping that declares only the geometry columns, because dynamic mapping can
+     * never infer {@code geo_point} or {@code geo_shape}. Other columns are left to dynamic mapping
+     * so existing jobs keep their current index layout. Returns null when there is no geometry
+     * column.
+     */
+    static String buildGeometryMapping(CatalogTable table) {
+        if (table == null) {
+            return null;
+        }
+        ObjectNode properties = OBJECT_MAPPER.createObjectNode();
+        for (Column column : table.getTableSchema().getColumns()) {
+            if (column.getDataType().getSqlType() != SqlType.GEOMETRY) {
+                continue;
+            }
+            String fieldType =
+                    ElasticSearchTypeConverter.INSTANCE.reconvert(column).getNativeType().getType();
+            properties.putObject(column.getName()).put("type", fieldType);
+        }
+        if (properties.size() == 0) {
+            return null;
+        }
+        ObjectNode root = OBJECT_MAPPER.createObjectNode();
+        root.putObject("mappings").set("properties", properties);
+        return root.toString();
     }
 
     @Override

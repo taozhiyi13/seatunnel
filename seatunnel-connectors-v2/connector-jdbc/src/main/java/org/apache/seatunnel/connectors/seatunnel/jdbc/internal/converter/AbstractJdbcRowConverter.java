@@ -126,6 +126,9 @@ public abstract class AbstractJdbcRowConverter implements JdbcRowConverter {
                 case BYTES:
                     fields[fieldIndex] = JdbcFieldTypeUtils.getBytes(rs, resultSetIndex);
                     break;
+                case GEOMETRY:
+                    fields[fieldIndex] = readGeometry(rs, resultSetIndex);
+                    break;
                 case NULL:
                     fields[fieldIndex] = null;
                     break;
@@ -141,6 +144,15 @@ public abstract class AbstractJdbcRowConverter implements JdbcRowConverter {
             }
         }
         return new SeaTunnelRow(fields);
+    }
+
+    /**
+     * Reads one spatial value. Dialects that map a column to {@code GEOMETRY} override this. The
+     * default rejects the type so a dialect cannot silently return the driver's raw bytes.
+     */
+    protected Object readGeometry(ResultSet rs, int resultSetIndex) throws SQLException {
+        throw CommonError.unsupportedDataType(
+                converterName(), SqlType.GEOMETRY.toString(), "column " + resultSetIndex);
     }
 
     protected LocalTime readTime(ResultSet rs, int resultSetIndex) throws SQLException {

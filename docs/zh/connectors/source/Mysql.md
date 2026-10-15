@@ -65,7 +65,20 @@ import ChangeLog from '../changelog/connector-jdbc.md';
 | DATE                                                                                        | DATE                                                                                                                                            |
 | TIME(s)                                                                                     | TIME(s)                                                                                                                                         |
 | DATETIME<br/>TIMESTAMP(s)                                                                   | TIMESTAMP(s)                                                                                                                                    |
-| TINYBLOB<br/>MEDIUMBLOB<br/>BLOB<br/>LONGBLOB<br/>BINARY<br/>VARBINAR<br/>BIT(n)<br/>GEOMETRY | BYTES                                                                                                                                           |
+| TINYBLOB<br/>MEDIUMBLOB<br/>BLOB<br/>LONGBLOB<br/>BINARY<br/>VARBINAR<br/>BIT(n)            | BYTES                                                                                                                                           |
+| GEOMETRY                                                                                    | GEOMETRY(GEOMETRY)                                                                                                                              |
+| POINT                                                                                       | GEOMETRY(POINT)                                                                                                                                 |
+| LINESTRING                                                                                  | GEOMETRY(LINESTRING)                                                                                                                            |
+| POLYGON                                                                                     | GEOMETRY(POLYGON)                                                                                                                               |
+| MULTIPOINT                                                                                  | GEOMETRY(MULTIPOINT)                                                                                                                            |
+| MULTILINESTRING                                                                             | GEOMETRY(MULTILINESTRING)                                                                                                                       |
+| MULTIPOLYGON                                                                                | GEOMETRY(MULTIPOLYGON)                                                                                                                          |
+| GEOMETRYCOLLECTION<br/>GEOMCOLLECTION                                                       | GEOMETRY(GEOMETRYCOLLECTION)                                                                                                                    |
+
+空间值由无符号 32 位 SRID 和标准 WKB 组成。MySQL 在 WKB 前面返回小端序的 SRID，JDBC source
+会去掉这个前缀。该值保留自己的 SRID，source 不会转换坐标。空间列声明了 SRID 时
+（`information_schema.COLUMNS.SRS_ID`，MySQL 8.0 及以上），这个 SRID 会以 `srid` 记到列的
+options 中。
 
 ## 数据源参数
 

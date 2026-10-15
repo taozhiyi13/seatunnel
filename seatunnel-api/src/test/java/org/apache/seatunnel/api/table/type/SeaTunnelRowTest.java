@@ -22,6 +22,10 @@ import org.apache.seatunnel.shade.com.google.common.collect.Maps;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.math.BigDecimal;
 import java.util.Collections;
 import java.util.HashMap;
@@ -270,5 +274,63 @@ public class SeaTunnelRowTest {
         Assertions.assertEquals(BasicType.INT_TYPE, rowType.getFieldType(0));
         Assertions.assertEquals(BasicType.STRING_TYPE, rowType.getFieldType(1));
         Assertions.assertArrayEquals(new String[] {"id", "name"}, rowType.getFieldNames());
+    }
+
+    private static final SeaTunnelRowType GEOMETRY_ROW_TYPE =
+            new SeaTunnelRowType(
+                    new String[] {"id", "p"},
+                    new SeaTunnelDataType<?>[] {
+                        BasicType.LONG_TYPE, new GeometryType(GeometryKind.POINT)
+                    });
+
+    private static Geometry pointGeometry() {
+        return new Geometry(4326, GeometryTest.hexToBytes(GeometryTest.POINT_WKB_HEX));
+    }
+
+    @Test
+    void testGeometryRowSizeByType() {
+        SeaTunnelRow row = new SeaTunnelRow(new Object[] {1L, pointGeometry()});
+        Assertions.assertEquals(8 + 21, row.getBytesSize(GEOMETRY_ROW_TYPE));
+    }
+
+    @Test
+    void testGeometryRowSizeByValueAfterCopy() {
+        SeaTunnelRow row = new SeaTunnelRow(new Object[] {1L, pointGeometry()});
+        Assertions.assertEquals(8 + 21, row.getBytesSize(GEOMETRY_ROW_TYPE));
+
+        SeaTunnelRow copied = row.copy();
+        Assertions.assertEquals(8 + 21, copied.getBytesSize());
+    }
+
+    @Test
+    void testGeometryRowSizeWithNullGeometry() {
+        SeaTunnelRow row = new SeaTunnelRow(new Object[] {1L, null});
+        Assertions.assertEquals(8, row.getBytesSize(GEOMETRY_ROW_TYPE));
+        Assertions.assertEquals(8, row.copy().getBytesSize());
+    }
+
+    @Test
+    void testGeometrySridSurvivesRowCopyAndSerialization() throws Exception {
+        Geometry geometry =
+                new Geometry(
+                        Geometry.MAX_SRID, GeometryTest.hexToBytes(GeometryTest.POINT_WKB_HEX));
+        SeaTunnelRow row = new SeaTunnelRow(new Object[] {1L, geometry});
+
+        Geometry copiedGeometry = (Geometry) row.copy().getField(1);
+        Assertions.assertEquals(Geometry.MAX_SRID, copiedGeometry.getSrid());
+
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        try (ObjectOutputStream output = new ObjectOutputStream(bytes)) {
+            output.writeObject(row);
+        }
+        SeaTunnelRow restored;
+        try (ObjectInputStream input =
+                new ObjectInputStream(new ByteArrayInputStream(bytes.toByteArray()))) {
+            restored = (SeaTunnelRow) input.readObject();
+        }
+
+        Geometry restoredGeometry = (Geometry) restored.getField(1);
+        Assertions.assertEquals(geometry, restoredGeometry);
+        Assertions.assertEquals(Geometry.MAX_SRID, restoredGeometry.getSrid());
     }
 }

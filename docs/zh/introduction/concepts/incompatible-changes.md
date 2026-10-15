@@ -4,6 +4,13 @@
 
 ## dev
 
+### MySQL 空间列
+
+- **行为变更：MySQL 空间列从 `BYTES` 改为 `GEOMETRY`**
+  - **描述**：`GEOMETRY`、`POINT`、`LINESTRING`、`POLYGON`、`MULTIPOINT`、`MULTILINESTRING`、`MULTIPOLYGON`，以及 `GEOMETRYCOLLECTION` / `GEOMCOLLECTION` 此前映射为 `BYTES`。MySQL-CDC 和 MySQL JDBC source 现在把它们映射为 `GEOMETRY(<kind>)`，每个值携带无符号 32 位 SRID 和标准 WKB。Elasticsearch/OpenSearch sink 将 `POINT` 写成 `geo_point`，其它类型写成 `geo_shape`，并且只接受 SRID `4326`。
+  - **影响**：原来按字节数组读取这些列的作业，现在会拿到 `Geometry` 值。不支持 `GEOMETRY` 的 sink 会拒绝该列。把 `GEOMETRY` 列写回 MySQL 尚不支持。
+  - **迁移指南**：坐标为 WGS84（SRID `4326`）时，使用 Elasticsearch/OpenSearch sink。列上声明了其它 SRID（包括 `0`）时，创建该 sink 会失败。非 WGS84 坐标请先转换，或使用接受源端 SRID 的 sink。
+
 ### CDC：可空列不再用作快照分片列
 
 - **行为变更：基于 JDBC 的 CDC 源（MySQL、PostgreSQL、Oracle、SQL Server、DB2）不再使用可空列切分快照**

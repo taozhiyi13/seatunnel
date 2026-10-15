@@ -22,14 +22,19 @@ import org.apache.seatunnel.api.configuration.util.Conditions;
 import org.apache.seatunnel.api.configuration.util.OptionRule;
 import org.apache.seatunnel.api.options.SinkConnectorCommonOptions;
 import org.apache.seatunnel.api.table.catalog.CatalogTable;
+import org.apache.seatunnel.api.table.catalog.Column;
 import org.apache.seatunnel.api.table.catalog.TableIdentifier;
 import org.apache.seatunnel.api.table.connector.TableSink;
 import org.apache.seatunnel.api.table.factory.Factory;
 import org.apache.seatunnel.api.table.factory.TableSinkFactory;
 import org.apache.seatunnel.api.table.factory.TableSinkFactoryContext;
+import org.apache.seatunnel.api.table.type.GeometryType;
+import org.apache.seatunnel.api.table.type.SqlType;
+import org.apache.seatunnel.common.utils.SeaTunnelException;
 import org.apache.seatunnel.connectors.seatunnel.elasticsearch.config.AuthTypeEnum;
 import org.apache.seatunnel.connectors.seatunnel.elasticsearch.config.ElasticsearchSinkOptions;
 import org.apache.seatunnel.connectors.seatunnel.elasticsearch.config.ElasticsearchValidators.ApiKeyEncodedFormatValidator;
+import org.apache.seatunnel.connectors.seatunnel.elasticsearch.serialize.GeometryJsonConverter;
 
 import com.google.auto.service.AutoService;
 
@@ -109,9 +114,37 @@ public class ElasticsearchSinkFactory implements TableSinkFactory {
                 .build();
     }
 
+    /**
+     * Rejects tables whose spatial columns declare an SRID other than WGS84, since every non-null
+     * value in such a column would be rejected when the row is written. Columns without a declared
+     * SRID pass; their values are still checked row by row by the serializer.
+     */
+    static void validateDeclaredGeometrySrids(CatalogTable catalogTable) {
+        for (Column column : catalogTable.getTableSchema().getColumns()) {
+            if (column.getDataType().getSqlType() != SqlType.GEOMETRY
+                    || column.getOptions() == null) {
+                continue;
+            }
+            Object srid = column.getOptions().get(GeometryType.SRID_OPTION);
+            if (srid != null
+                    && ((Number) srid).longValue() != GeometryJsonConverter.OPENSEARCH_SRID) {
+                throw new SeaTunnelException(
+                        "Column ["
+                                + column.getName()
+                                + "] of table ["
+                                + catalogTable.getTablePath().getFullName()
+                                + "] declares SRID "
+                                + srid
+                                + ", but Elasticsearch/OpenSearch geo fields only accept SRID "
+                                + GeometryJsonConverter.OPENSEARCH_SRID);
+            }
+        }
+    }
+
     @Override
     public TableSink createSink(TableSinkFactoryContext context) {
         ReadonlyConfig readonlyConfig = context.getOptions();
+        validateDeclaredGeometrySrids(context.getCatalogTable());
         String original = readonlyConfig.get(INDEX);
         CatalogTable newTable =
                 CatalogTable.of(

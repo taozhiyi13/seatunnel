@@ -24,11 +24,14 @@ import org.apache.seatunnel.shade.org.apache.commons.lang3.StringUtils;
 import org.apache.seatunnel.api.table.catalog.CatalogTable;
 import org.apache.seatunnel.api.table.catalog.Column;
 import org.apache.seatunnel.api.table.catalog.ConstraintKey;
+import org.apache.seatunnel.api.table.catalog.PhysicalColumn;
 import org.apache.seatunnel.api.table.catalog.TableIdentifier;
 import org.apache.seatunnel.api.table.catalog.TablePath;
 import org.apache.seatunnel.api.table.catalog.exception.CatalogException;
 import org.apache.seatunnel.api.table.catalog.exception.TableNotExistException;
 import org.apache.seatunnel.api.table.converter.BasicTypeDefine;
+import org.apache.seatunnel.api.table.type.GeometryType;
+import org.apache.seatunnel.api.table.type.SqlType;
 import org.apache.seatunnel.common.utils.JdbcUrlUtil;
 import org.apache.seatunnel.connectors.seatunnel.jdbc.catalog.AbstractJdbcCatalog;
 import org.apache.seatunnel.connectors.seatunnel.jdbc.catalog.utils.CatalogUtils;
@@ -45,8 +48,10 @@ import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -72,6 +77,8 @@ public class MySqlCatalog extends AbstractJdbcCatalog {
     public static final String TABLE_OPTION_ENGINE = "engine";
     public static final String TABLE_OPTION_CHARSET = "charset";
     public static final String TABLE_OPTION_COLLATE = "collate";
+
+    private static final String COLUMN_SRS_ID = "SRS_ID";
 
     private MySqlVersion version;
     private MySqlTypeConverter typeConverter;
@@ -256,7 +263,42 @@ public class MySqlCatalog extends AbstractJdbcCatalog {
                         .defaultValue(defaultValue)
                         .comment(comment)
                         .build();
-        return typeConverter.convert(typeDefine);
+        return withSrsId(typeConverter.convert(typeDefine), readSrsId(resultSet));
+    }
+
+    /**
+     * Returns the SRID declared on the column, or null when it declares none. MySQL 5.7 has no
+     * {@code SRS_ID} column in {@code information_schema.COLUMNS}, which is treated the same way.
+     */
+    static Long readSrsId(ResultSet resultSet) throws SQLException {
+        ResultSetMetaData metaData = resultSet.getMetaData();
+        for (int i = 1; i <= metaData.getColumnCount(); i++) {
+            if (COLUMN_SRS_ID.equalsIgnoreCase(metaData.getColumnLabel(i))) {
+                Object srsId = resultSet.getObject(i);
+                return srsId == null ? null : ((Number) srsId).longValue();
+            }
+        }
+        return null;
+    }
+
+    static Column withSrsId(Column column, Long srsId) {
+        if (srsId == null || column.getDataType().getSqlType() != SqlType.GEOMETRY) {
+            return column;
+        }
+        Map<String, Object> options =
+                column.getOptions() == null ? new HashMap<>() : new HashMap<>(column.getOptions());
+        options.put(GeometryType.SRID_OPTION, srsId);
+        return PhysicalColumn.builder()
+                .name(column.getName())
+                .dataType(column.getDataType())
+                .columnLength(column.getColumnLength())
+                .scale(column.getScale())
+                .nullable(column.isNullable())
+                .defaultValue(column.getDefaultValue())
+                .comment(column.getComment())
+                .sourceType(column.getSourceType())
+                .options(options)
+                .build();
     }
 
     @Override

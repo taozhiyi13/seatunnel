@@ -17,6 +17,7 @@
 
 package org.apache.seatunnel.connectors.seatunnel.jdbc.internal.dialect.mysql;
 
+import org.apache.seatunnel.api.table.type.Geometry;
 import org.apache.seatunnel.connectors.seatunnel.jdbc.internal.converter.AbstractJdbcRowConverter;
 import org.apache.seatunnel.connectors.seatunnel.jdbc.internal.dialect.DatabaseIdentifier;
 import org.apache.seatunnel.connectors.seatunnel.jdbc.utils.JdbcFieldTypeUtils;
@@ -27,6 +28,7 @@ import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.util.Arrays;
 
 public class MysqlJdbcRowConverter extends AbstractJdbcRowConverter {
     @Override
@@ -45,5 +47,29 @@ public class MysqlJdbcRowConverter extends AbstractJdbcRowConverter {
         // Write to time column using timestamp retains milliseconds
         statement.setTimestamp(
                 index, java.sql.Timestamp.valueOf(LocalDateTime.of(LocalDate.now(), time)));
+    }
+
+    /**
+     * MySQL returns a geometry as a little-endian unsigned 32-bit SRID followed by standard WKB.
+     */
+    @Override
+    protected Object readGeometry(ResultSet rs, int resultSetIndex) throws SQLException {
+        byte[] raw = rs.getBytes(resultSetIndex);
+        if (raw == null) {
+            return null;
+        }
+        if (raw.length < Integer.BYTES) {
+            throw new SQLException(
+                    "MySQL geometry value at column "
+                            + resultSetIndex
+                            + " is shorter than the 4-byte SRID prefix");
+        }
+        long srid =
+                Integer.toUnsignedLong(
+                        (raw[0] & 0xFF)
+                                | ((raw[1] & 0xFF) << 8)
+                                | ((raw[2] & 0xFF) << 16)
+                                | ((raw[3] & 0xFF) << 24));
+        return new Geometry(srid, Arrays.copyOfRange(raw, Integer.BYTES, raw.length));
     }
 }

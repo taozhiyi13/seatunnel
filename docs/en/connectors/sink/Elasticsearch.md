@@ -27,6 +27,33 @@ Engine Supported
 
 :::
 
+## Spatial Types
+
+The sink writes SeaTunnel `GEOMETRY` values to Elasticsearch/OpenSearch geo fields:
+
+| SeaTunnel spatial type | Elasticsearch/OpenSearch field type | Stored value |
+|------------------------|-------------------------------------|--------------|
+| `GEOMETRY(POINT)`      | `geo_point`                         | `{"lon": x, "lat": y}` |
+| All other `GEOMETRY` kinds | `geo_shape`                     | GeoJSON |
+
+Elasticsearch/OpenSearch geo fields use WGS84 coordinates, so this sink accepts only SRID `4326`.
+The sink validates the SRID but does not transform coordinates. MySQL-CDC and the SeaTunnel
+pipeline can preserve other SRIDs; use a sink that supports the source SRID or transform the
+coordinates to WGS84 before writing them with this sink.
+
+When the upstream table comes from the MySQL catalog (for example MySQL-CDC), job submission
+checks the SRID declared on each spatial column:
+
+| Column SRID declared in MySQL | Result |
+|-------------------------------|--------|
+| None (`SRS_ID` is NULL, or MySQL has no `SRS_ID` column, as in 5.7) | Submission succeeds; each value is checked when it is written |
+| `4326` | Submission succeeds |
+| Any other value, including `0` | Submission fails before the source reads data |
+
+When `schema_save_mode = "CREATE_SCHEMA_WHEN_NOT_EXIST"`, SeaTunnel creates `geo_point` and
+`geo_shape` mappings for spatial columns. If the index already exists, configure those mappings
+before the job starts; dynamic mapping cannot infer geo field types.
+
 ## Options
 
 | name                    | type    | required |        default value         | description |

@@ -192,6 +192,8 @@ public final class SeaTunnelRow implements Serializable {
                 return ((ByteBuffer) v).capacity();
             case SPARSE_FLOAT_VECTOR:
                 return ((Map<?, ?>) v).entrySet().size() * 8;
+            case GEOMETRY:
+                return ((Geometry) v).getWkb().length;
             case ARRAY:
                 SeaTunnelDataType elementType = ((ArrayType) dataType).getElementType();
                 if (elementType instanceof DecimalType) {
@@ -389,6 +391,9 @@ public final class SeaTunnelRow implements Serializable {
                                         + getBytesForValue(entry.getValue());
                     }
                     return mapSize;
+                }
+                if (v instanceof Geometry) {
+                    return ((Geometry) v).getWkb().length;
                 }
                 throw new UnsupportedOperationException("Unsupported type: " + clazz);
         }

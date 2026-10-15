@@ -179,7 +179,25 @@ When an initial consistent snapshot is made for large databases, your establishe
 | DATE                                                                                           | DATE                |
 | TIME(s)                                                                                        | TIME(s)             |
 | DATETIME<br/>TIMESTAMP(s)                                                                      | TIMESTAMP(s)        |
-| BINARY<br/>VARBINAR<br/>BIT(p)<br/>TINYBLOB<br/>MEDIUMBLOB<br/>BLOB<br/>LONGBLOB <br/>GEOMETRY | BYTES               |
+| BINARY<br/>VARBINARY<br/>BIT(p)<br/>TINYBLOB<br/>MEDIUMBLOB<br/>BLOB<br/>LONGBLOB             | BYTES               |
+| GEOMETRY                                                                                      | GEOMETRY(GEOMETRY)  |
+| POINT                                                                                         | GEOMETRY(POINT)     |
+| LINESTRING                                                                                    | GEOMETRY(LINESTRING) |
+| POLYGON                                                                                       | GEOMETRY(POLYGON)   |
+| MULTIPOINT                                                                                    | GEOMETRY(MULTIPOINT) |
+| MULTILINESTRING                                                                               | GEOMETRY(MULTILINESTRING) |
+| MULTIPOLYGON                                                                                  | GEOMETRY(MULTIPOLYGON) |
+| GEOMETRYCOLLECTION<br/>GEOMCOLLECTION                                                         | GEOMETRY(GEOMETRYCOLLECTION) |
+
+MySQL-CDC preserves the spatial value's unsigned 32-bit SRID and standard WKB without
+transforming its coordinates. All MySQL SRIDs from `0` through `4294967295` can pass through the
+source and SeaTunnel pipeline. SRID `0` means that MySQL did not associate the value with a spatial
+reference system. Whether a sink accepts a particular SRID is determined by that sink.
+
+When a spatial column declares an SRID (`information_schema.COLUMNS.SRS_ID`, MySQL 8.0+), the
+source records it in the column options as `srid`, so sinks can reject incompatible
+columns at job submission. Columns without a declared SRID, and all spatial columns on MySQL
+versions without `SRS_ID`, carry no such option. Spatial types are verified on MySQL 8.0.
 
 ## Source Options
 

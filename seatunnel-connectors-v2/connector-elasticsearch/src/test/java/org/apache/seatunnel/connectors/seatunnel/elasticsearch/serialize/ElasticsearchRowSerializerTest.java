@@ -17,7 +17,13 @@
 
 package org.apache.seatunnel.connectors.seatunnel.elasticsearch.serialize;
 
+import org.apache.seatunnel.shade.com.fasterxml.jackson.databind.JsonNode;
+import org.apache.seatunnel.shade.com.fasterxml.jackson.databind.ObjectMapper;
+
 import org.apache.seatunnel.api.configuration.ReadonlyConfig;
+import org.apache.seatunnel.api.table.type.Geometry;
+import org.apache.seatunnel.api.table.type.GeometryKind;
+import org.apache.seatunnel.api.table.type.GeometryType;
 import org.apache.seatunnel.api.table.type.RowKind;
 import org.apache.seatunnel.api.table.type.SeaTunnelDataType;
 import org.apache.seatunnel.api.table.type.SeaTunnelRow;
@@ -36,6 +42,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
+import static org.apache.seatunnel.api.table.type.BasicType.LONG_TYPE;
 import static org.apache.seatunnel.api.table.type.BasicType.STRING_TYPE;
 
 public class ElasticsearchRowSerializerTest {
@@ -213,5 +220,91 @@ public class ElasticsearchRowSerializerTest {
         Assertions.assertTrue(
                 result.contains("\"ts\":\"2023-01-02T03:04:05\""),
                 "LocalDateTime field should be formatted with ISO-8601 'T' separator");
+    }
+
+    @Test
+    public void testSerializeGeometryFields() throws Exception {
+        String index = "st_index";
+        Map<String, Object> confMap = new HashMap<>();
+        confMap.put(ElasticsearchSinkOptions.INDEX.key(), index);
+        confMap.put(ElasticsearchSinkOptions.PRIMARY_KEYS.key(), Arrays.asList("id"));
+
+        ReadonlyConfig pluginConf = ReadonlyConfig.fromMap(confMap);
+        ElasticsearchClusterInfo clusterInfo =
+                ElasticsearchClusterInfo.builder().clusterVersion("8.0.0").build();
+        IndexInfo indexInfo = new IndexInfo(index, pluginConf);
+        SeaTunnelRowType schema =
+                new SeaTunnelRowType(
+                        new String[] {"id", "p", "area"},
+                        new SeaTunnelDataType[] {
+                            LONG_TYPE,
+                            new GeometryType(GeometryKind.POINT),
+                            new GeometryType(GeometryKind.POLYGON)
+                        });
+
+        final ElasticsearchRowSerializer serializer =
+                new ElasticsearchRowSerializer(clusterInfo, indexInfo, schema);
+
+        SeaTunnelRow row =
+                new SeaTunnelRow(
+                        new Object[] {
+                            1L,
+                            new Geometry(
+                                    4326,
+                                    GeometryJsonConverterTest.hexToBytes(
+                                            GeometryJsonConverterTest.WKB_P)),
+                            new Geometry(
+                                    4326,
+                                    GeometryJsonConverterTest.hexToBytes(
+                                            GeometryJsonConverterTest.WKB_POLY))
+                        });
+        row.setRowKind(RowKind.INSERT);
+
+        String[] lines = serializer.serializeRow(row).split("\n");
+        Assertions.assertEquals(2, lines.length);
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode doc = mapper.readTree(lines[1]).get("doc");
+        Assertions.assertEquals(1L, doc.get("id").asLong());
+        Assertions.assertEquals(mapper.readTree("{\"lon\":121.5,\"lat\":31.2}"), doc.get("p"));
+        Assertions.assertEquals(
+                mapper.readTree(GeometryJsonConverterTest.POLY_GEOJSON), doc.get("area"));
+    }
+
+    @Test
+    public void testRejectNonWgs84SridAtSinkSerializer() {
+        String index = "st_index";
+        Map<String, Object> confMap = new HashMap<>();
+        confMap.put(ElasticsearchSinkOptions.INDEX.key(), index);
+        confMap.put(ElasticsearchSinkOptions.PRIMARY_KEYS.key(), Arrays.asList("id"));
+
+        ElasticsearchRowSerializer serializer =
+                new ElasticsearchRowSerializer(
+                        ElasticsearchClusterInfo.builder().clusterVersion("8.0.0").build(),
+                        new IndexInfo(index, ReadonlyConfig.fromMap(confMap)),
+                        new SeaTunnelRowType(
+                                new String[] {"id", "p"},
+                                new SeaTunnelDataType[] {
+                                    LONG_TYPE, new GeometryType(GeometryKind.POINT)
+                                }));
+
+        for (long srid : new long[] {0L, 3857L, Geometry.MAX_SRID}) {
+            SeaTunnelRow row =
+                    new SeaTunnelRow(
+                            new Object[] {
+                                1L,
+                                new Geometry(
+                                        srid,
+                                        GeometryJsonConverterTest.hexToBytes(
+                                                GeometryJsonConverterTest.WKB_P))
+                            });
+            row.setRowKind(RowKind.INSERT);
+
+            IllegalArgumentException e =
+                    Assertions.assertThrows(
+                            IllegalArgumentException.class, () -> serializer.serializeRow(row));
+            Assertions.assertTrue(e.getMessage().contains("Column [p]"), e.getMessage());
+            Assertions.assertTrue(e.getMessage().contains("SRID " + srid), e.getMessage());
+            Assertions.assertTrue(e.getMessage().contains("4326"), e.getMessage());
+        }
     }
 }

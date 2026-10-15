@@ -23,6 +23,8 @@ import org.apache.seatunnel.api.table.catalog.PhysicalColumn;
 import org.apache.seatunnel.api.table.converter.BasicTypeDefine;
 import org.apache.seatunnel.api.table.type.BasicType;
 import org.apache.seatunnel.api.table.type.DecimalType;
+import org.apache.seatunnel.api.table.type.GeometryKind;
+import org.apache.seatunnel.api.table.type.GeometryType;
 import org.apache.seatunnel.api.table.type.LocalTimeType;
 import org.apache.seatunnel.api.table.type.MapType;
 import org.apache.seatunnel.api.table.type.PrimitiveByteArrayType;
@@ -690,8 +692,38 @@ public class MySqlTypeConverterTest {
                         .build();
         Column column = MySqlTypeConverter.DEFAULT_INSTANCE.convert(typeDefine);
         Assertions.assertEquals(typeDefine.getName(), column.getName());
-        Assertions.assertEquals(PrimitiveByteArrayType.INSTANCE, column.getDataType());
+        Assertions.assertEquals(new GeometryType(GeometryKind.GEOMETRY), column.getDataType());
         Assertions.assertEquals(typeDefine.getColumnType(), column.getSourceType());
+    }
+
+    @Test
+    public void testConvertSpatialTypes() {
+        assertSpatialType("point", GeometryKind.POINT);
+        assertSpatialType("linestring", GeometryKind.LINESTRING);
+        assertSpatialType("polygon", GeometryKind.POLYGON);
+        assertSpatialType("multipoint", GeometryKind.MULTIPOINT);
+        assertSpatialType("multilinestring", GeometryKind.MULTILINESTRING);
+        assertSpatialType("multipolygon", GeometryKind.MULTIPOLYGON);
+    }
+
+    @Test
+    public void testConvertGeometryCollection() {
+        assertSpatialType("geometrycollection", GeometryKind.GEOMETRYCOLLECTION);
+        assertSpatialType("geomcollection", GeometryKind.GEOMETRYCOLLECTION);
+    }
+
+    private static void assertSpatialType(String mysqlType, GeometryKind expectedKind) {
+        BasicTypeDefine<Object> typeDefine =
+                BasicTypeDefine.builder()
+                        .name("test")
+                        .columnType(mysqlType)
+                        .dataType(mysqlType)
+                        .build();
+        Column column = MySqlTypeConverter.DEFAULT_INSTANCE.convert(typeDefine);
+        Assertions.assertEquals(typeDefine.getName(), column.getName());
+        Assertions.assertEquals(
+                new GeometryType(expectedKind), column.getDataType(), "type " + mysqlType);
+        Assertions.assertEquals(mysqlType, column.getSourceType());
     }
 
     @Test

@@ -19,6 +19,9 @@ package org.apache.seatunnel.connectors.seatunnel.jdbc.internal.dialect.mysql;
 
 import org.apache.seatunnel.api.table.catalog.PhysicalColumn;
 import org.apache.seatunnel.api.table.catalog.TableSchema;
+import org.apache.seatunnel.api.table.type.Geometry;
+import org.apache.seatunnel.api.table.type.GeometryKind;
+import org.apache.seatunnel.api.table.type.GeometryType;
 import org.apache.seatunnel.api.table.type.LocalTimeType;
 import org.apache.seatunnel.api.table.type.SeaTunnelRow;
 
@@ -27,10 +30,14 @@ import org.mockito.ArgumentCaptor;
 
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.LocalTime;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -60,5 +67,73 @@ public class MysqlJdbcRowConverterTest {
         ArgumentCaptor<Timestamp> timestamp = ArgumentCaptor.forClass(Timestamp.class);
         verify(statement).setTimestamp(org.mockito.ArgumentMatchers.eq(1), timestamp.capture());
         assertEquals(expected.getNano(), timestamp.getValue().getNanos());
+    }
+
+    @Test
+    public void testGeometryReadsLittleEndianSridAndWkb() throws Exception {
+        byte[] wkb = hexToBytes("01010000000000000000605E403333333333333F40");
+        byte[] raw = new byte[Integer.BYTES + wkb.length];
+        raw[0] = (byte) 0xE6;
+        raw[1] = (byte) 0x10;
+        System.arraycopy(wkb, 0, raw, Integer.BYTES, wkb.length);
+
+        TableSchema tableSchema =
+                TableSchema.builder()
+                        .column(
+                                PhysicalColumn.builder()
+                                        .name("location")
+                                        .dataType(new GeometryType(GeometryKind.POINT))
+                                        .build())
+                        .build();
+        ResultSet resultSet = mock(ResultSet.class);
+        when(resultSet.getBytes(1)).thenReturn(raw);
+
+        SeaTunnelRow result = new MysqlJdbcRowConverter().toInternal(resultSet, tableSchema);
+        Geometry geometry = (Geometry) result.getField(0);
+        assertEquals(4326L, geometry.getSrid());
+        assertArrayEquals(wkb, geometry.getWkb());
+    }
+
+    @Test
+    public void testNullGeometry() throws Exception {
+        TableSchema tableSchema =
+                TableSchema.builder()
+                        .column(
+                                PhysicalColumn.builder()
+                                        .name("location")
+                                        .dataType(new GeometryType(GeometryKind.POINT))
+                                        .build())
+                        .build();
+        ResultSet resultSet = mock(ResultSet.class);
+        when(resultSet.getBytes(1)).thenReturn(null);
+
+        SeaTunnelRow result = new MysqlJdbcRowConverter().toInternal(resultSet, tableSchema);
+        assertNull(result.getField(0));
+    }
+
+    @Test
+    public void testGeometryShorterThanSridPrefixFails() throws Exception {
+        TableSchema tableSchema =
+                TableSchema.builder()
+                        .column(
+                                PhysicalColumn.builder()
+                                        .name("location")
+                                        .dataType(new GeometryType(GeometryKind.GEOMETRY))
+                                        .build())
+                        .build();
+        ResultSet resultSet = mock(ResultSet.class);
+        when(resultSet.getBytes(1)).thenReturn(new byte[] {1, 2});
+
+        assertThrows(
+                SQLException.class,
+                () -> new MysqlJdbcRowConverter().toInternal(resultSet, tableSchema));
+    }
+
+    private static byte[] hexToBytes(String hex) {
+        byte[] bytes = new byte[hex.length() / 2];
+        for (int i = 0; i < bytes.length; i++) {
+            bytes[i] = (byte) Integer.parseInt(hex.substring(i * 2, i * 2 + 2), 16);
+        }
+        return bytes;
     }
 }

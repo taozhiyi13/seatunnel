@@ -19,6 +19,8 @@ package org.apache.seatunnel.connectors.cdc.debezium.row;
 
 import org.apache.seatunnel.api.table.type.ArrayType;
 import org.apache.seatunnel.api.table.type.BasicType;
+import org.apache.seatunnel.api.table.type.GeometryKind;
+import org.apache.seatunnel.api.table.type.GeometryType;
 import org.apache.seatunnel.api.table.type.SeaTunnelDataType;
 import org.apache.seatunnel.api.table.type.SeaTunnelRow;
 import org.apache.seatunnel.api.table.type.SeaTunnelRowType;
@@ -36,6 +38,7 @@ import org.junit.jupiter.api.Test;
 
 import io.debezium.data.geometry.Geography;
 import io.debezium.data.geometry.Geometry;
+import io.debezium.data.geometry.Point;
 
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -261,5 +264,190 @@ public class SeaTunnelRowDebeziumDeserializationConvertersTest {
                 () ->
                         SeaTunnelRowDebeziumDeserializationConverters.parseOffsetDateTimeFromString(
                                 "not-a-timestamp", ZoneId.systemDefault()));
+    }
+
+    // WKB samples from the experiment database, SUBSTR(HEX(col), 9) of SRID 4326 values.
+    private static final String WKB_P = "01010000000000000000605E403333333333333F40";
+    private static final String WKB_G = "01010000009A99999999195D403333333333F34340";
+    private static final String WKB_LS =
+            "0102000000020000000000000000605E403333333333333F406666666666665E40CDCCCCCCCC4C3F40";
+    private static final String WKB_POLY =
+            "010300000001000000050000009A99999999595E403333333333333F400000000000605E40"
+                    + "3333333333333F400000000000605E40CDCCCCCCCC4C3F409A99999999595E40CDCCCCCC"
+                    + "CC4C3F409A99999999595E403333333333333F40";
+    private static final String WKB_MP =
+            "01040000000200000001010000000000000000605E403333333333333F4001010000006666666666665E40"
+                    + "CDCCCCCCCC4C3F40";
+    private static final String WKB_MLS =
+            "0105000000020000000102000000020000000000000000605E403333333333333F406666666666665E40"
+                    + "CDCCCCCCCC4C3F40010200000002000000CDCCCCCCCC6C5E406666666666663F403333333333"
+                    + "735E400000000000803F40";
+    private static final String WKB_MPOLY =
+            "010600000001000000010300000001000000050000009A99999999595E403333333333333F40000000"
+                    + "0000605E403333333333333F400000000000605E40CDCCCCCCCC4C3F409A99999999595E40CD"
+                    + "CCCCCCCC4C3F409A99999999595E403333333333333F40";
+    private static final String WKB_GC =
+            "01070000000200000001010000000000000000605E403333333333333F40010200000002000000000000"
+                    + "0000605E403333333333333F406666666666665E40CDCCCCCCCC4C3F40";
+
+    private static byte[] hexToBytes(String hex) {
+        byte[] bytes = new byte[hex.length() / 2];
+        for (int i = 0; i < bytes.length; i++) {
+            bytes[i] = (byte) Integer.parseInt(hex.substring(i * 2, i * 2 + 2), 16);
+        }
+        return bytes;
+    }
+
+    private static SeaTunnelRow convertRecord(
+            SeaTunnelRowType rowType, Schema recordSchema, Struct recordValue) throws Exception {
+        SeaTunnelRowDebeziumDeserializationConverters converters =
+                new SeaTunnelRowDebeziumDeserializationConverters(
+                        rowType,
+                        new MetadataConverter[] {},
+                        ZoneId.systemDefault(),
+                        DebeziumDeserializationConverterFactory.DEFAULT);
+        SourceRecord record =
+                new SourceRecord(
+                        new HashMap<>(),
+                        new HashMap<>(),
+                        "topicName",
+                        null,
+                        SchemaBuilder.int32().build(),
+                        1,
+                        recordSchema,
+                        recordValue,
+                        null,
+                        new ArrayList<>());
+        return converters.convert(record, recordValue, recordSchema);
+    }
+
+    /** Converts a record with a single geometry column named {@code g}. */
+    private static Object convertSingleGeometry(
+            GeometryKind kind, Schema geometrySchema, Struct geometryValue) throws Exception {
+        SeaTunnelRowType rowType =
+                new SeaTunnelRowType(
+                        new String[] {"g"}, new SeaTunnelDataType[] {new GeometryType(kind)});
+        Schema recordSchema = SchemaBuilder.struct().field("g", geometrySchema).build();
+        Struct recordValue = new Struct(recordSchema);
+        if (geometryValue != null) {
+            recordValue.put("g", geometryValue);
+        }
+        return convertRecord(rowType, recordSchema, recordValue).getField(0);
+    }
+
+    private static void assertGeometry(Object actual, long expectedSrid, byte[] expectedWkb) {
+        Assertions.assertTrue(
+                actual instanceof org.apache.seatunnel.api.table.type.Geometry,
+                "expected SeaTunnel Geometry but got " + actual);
+        org.apache.seatunnel.api.table.type.Geometry geometry =
+                (org.apache.seatunnel.api.table.type.Geometry) actual;
+        Assertions.assertEquals(expectedSrid, geometry.getSrid());
+        Assertions.assertArrayEquals(expectedWkb, geometry.getWkb());
+    }
+
+    @Test
+    void testGeometryStructToGeometry() throws Exception {
+        byte[] wkb = hexToBytes(WKB_POLY);
+        Schema schema = Geometry.builder().optional().build();
+        Object value =
+                convertSingleGeometry(
+                        GeometryKind.POLYGON, schema, Geometry.createValue(schema, wkb, 4326));
+        assertGeometry(value, 4326L, wkb);
+    }
+
+    @Test
+    void testPointStructToGeometry() throws Exception {
+        byte[] wkb = hexToBytes(WKB_P);
+        Schema schema = Point.builder().optional().build();
+        Object value =
+                convertSingleGeometry(
+                        GeometryKind.POINT, schema, Point.createValue(schema, wkb, 4326));
+        assertGeometry(value, 4326L, wkb);
+    }
+
+    @Test
+    void testGeometrySrid0PassedThrough() throws Exception {
+        Schema schema = Geometry.builder().optional().build();
+        byte[] wkb = hexToBytes(WKB_P);
+        Struct value = Geometry.createValue(schema, wkb, null);
+        Object actual = convertSingleGeometry(GeometryKind.GEOMETRY, schema, value);
+        assertGeometry(actual, 0L, wkb);
+    }
+
+    @Test
+    void testGeometryUnsignedSridPassedThrough() throws Exception {
+        Schema schema = Geometry.builder().optional().build();
+        byte[] wkb = hexToBytes(WKB_P);
+        int[] rawSrids = {0, 3857, 4326, Integer.MAX_VALUE, Integer.MIN_VALUE, -1};
+        for (int rawSrid : rawSrids) {
+            Struct value = Geometry.createValue(schema, wkb, rawSrid);
+            Object actual = convertSingleGeometry(GeometryKind.GEOMETRY, schema, value);
+            assertGeometry(actual, Integer.toUnsignedLong(rawSrid), wkb);
+        }
+    }
+
+    @Test
+    void testGeometrySqlNull() throws Exception {
+        Schema schema = Geometry.builder().optional().build();
+        Assertions.assertNull(convertSingleGeometry(GeometryKind.GEOMETRY, schema, null));
+    }
+
+    @Test
+    void testFullGeometryRowConversionAndBytesSize() throws Exception {
+        String[] names = {"id", "g", "p", "ls", "poly", "mp", "mls", "mpoly", "gc"};
+        GeometryKind[] kinds = {
+            GeometryKind.GEOMETRY,
+            GeometryKind.POINT,
+            GeometryKind.LINESTRING,
+            GeometryKind.POLYGON,
+            GeometryKind.MULTIPOINT,
+            GeometryKind.MULTILINESTRING,
+            GeometryKind.MULTIPOLYGON,
+            GeometryKind.GEOMETRYCOLLECTION
+        };
+        String[] samples = {WKB_G, WKB_P, WKB_LS, WKB_POLY, WKB_MP, WKB_MLS, WKB_MPOLY, WKB_GC};
+
+        SeaTunnelDataType<?>[] types = new SeaTunnelDataType<?>[names.length];
+        types[0] = BasicType.LONG_TYPE;
+        SchemaBuilder schemaBuilder = SchemaBuilder.struct().field("id", Schema.INT64_SCHEMA);
+        Schema[] geometrySchemas = new Schema[kinds.length];
+        for (int i = 0; i < kinds.length; i++) {
+            types[i + 1] = new GeometryType(kinds[i]);
+            geometrySchemas[i] =
+                    kinds[i] == GeometryKind.POINT
+                            ? Point.builder().optional().build()
+                            : Geometry.builder().optional().build();
+            schemaBuilder.field(names[i + 1], geometrySchemas[i]);
+        }
+        SeaTunnelRowType rowType = new SeaTunnelRowType(names, types);
+        Schema recordSchema = schemaBuilder.build();
+
+        Struct fullValue = new Struct(recordSchema);
+        fullValue.put("id", 1L);
+        int expectedSize = 8;
+        for (int i = 0; i < kinds.length; i++) {
+            byte[] wkb = hexToBytes(samples[i]);
+            expectedSize += wkb.length;
+            Struct geometryValue =
+                    kinds[i] == GeometryKind.POINT
+                            ? Point.createValue(geometrySchemas[i], wkb, 4326)
+                            : Geometry.createValue(geometrySchemas[i], wkb, 4326);
+            fullValue.put(names[i + 1], geometryValue);
+        }
+
+        SeaTunnelRow fullRow = convertRecord(rowType, recordSchema, fullValue);
+        Assertions.assertEquals(1L, fullRow.getField(0));
+        for (int i = 0; i < kinds.length; i++) {
+            assertGeometry(fullRow.getField(i + 1), 4326L, hexToBytes(samples[i]));
+        }
+        Assertions.assertEquals(expectedSize, fullRow.getBytesSize(rowType));
+
+        Struct nullValue = new Struct(recordSchema);
+        nullValue.put("id", 2L);
+        SeaTunnelRow nullRow = convertRecord(rowType, recordSchema, nullValue);
+        for (int i = 0; i < kinds.length; i++) {
+            Assertions.assertNull(nullRow.getField(i + 1), names[i + 1]);
+        }
+        Assertions.assertEquals(8, nullRow.getBytesSize(rowType));
     }
 }

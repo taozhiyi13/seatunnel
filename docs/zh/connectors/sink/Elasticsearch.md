@@ -21,6 +21,32 @@ import ChangeLog from '../changelog/connector-elasticsearch.md';
 
 :::
 
+## 空间类型
+
+Sink 会将 SeaTunnel `GEOMETRY` 值写入 Elasticsearch/OpenSearch 地理字段：
+
+| SeaTunnel 空间类型 | Elasticsearch/OpenSearch 字段类型 | 存储值 |
+|--------------------|-----------------------------------|--------|
+| `GEOMETRY(POINT)`  | `geo_point`                       | `{"lon": x, "lat": y}` |
+| 其它所有 `GEOMETRY` 类型 | `geo_shape`                  | GeoJSON |
+
+Elasticsearch/OpenSearch 地理字段使用 WGS84 坐标，因此此 sink 只接受 SRID `4326`。Sink
+会校验 SRID，但不会转换坐标。MySQL-CDC 和 SeaTunnel 同步链路可以保留其它 SRID；请使用
+支持源端 SRID 的 sink，或者在使用此 sink 写入前将坐标转换为 WGS84。
+
+上游表来自 MySQL catalog（例如 MySQL-CDC）时，任务提交和 `--dry-run connect` 还会检查每个空间列
+上声明的 SRID：
+
+| MySQL 列上声明的 SRID | 结果 |
+|-----------------------|------|
+| 未声明（`SRS_ID` 为 NULL，或 MySQL 没有 `SRS_ID` 列，例如 5.7） | 提交成功；每个值在写入时检查 |
+| `4326` | 提交成功 |
+| 其它值，包括 `0` | 提交失败，source 不会开始读数据 |
+
+当 `schema_save_mode = "CREATE_SCHEMA_WHEN_NOT_EXIST"` 时，SeaTunnel 会为空间列创建
+`geo_point` 和 `geo_shape` mapping。如果索引已经存在，请在任务启动前配置这些 mapping；
+动态 mapping 无法推断地理字段类型。
+
 ## 选项
 
 |           名称           | 类型      | 是否必须 |             默认值              |

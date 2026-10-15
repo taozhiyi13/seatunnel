@@ -25,6 +25,8 @@ import org.apache.seatunnel.api.table.converter.TypeConverter;
 import org.apache.seatunnel.api.table.type.ArrayType;
 import org.apache.seatunnel.api.table.type.BasicType;
 import org.apache.seatunnel.api.table.type.DecimalType;
+import org.apache.seatunnel.api.table.type.GeometryKind;
+import org.apache.seatunnel.api.table.type.GeometryType;
 import org.apache.seatunnel.api.table.type.LocalTimeType;
 import org.apache.seatunnel.api.table.type.MapType;
 import org.apache.seatunnel.api.table.type.SeaTunnelDataType;
@@ -356,6 +358,13 @@ public class ElasticSearchTypeConverter implements BasicTypeConverter<BasicTypeD
                                             null)));
                 }
                 builder.nativeType(new EsType(OBJECT, (Map) typeInfo));
+                break;
+            case GEOMETRY:
+                GeometryKind kind = ((GeometryType) column.getDataType()).getKind();
+                String geoType = kind == GeometryKind.POINT ? GEO_POINT : GEO_SHAPE;
+                builder.columnType(geoType);
+                builder.dataType(geoType);
+                builder.nativeType(new EsType(geoType, new HashMap<>()));
                 break;
             case TIME:
             case NULL:

@@ -26,6 +26,8 @@ import org.apache.seatunnel.api.table.converter.BasicTypeDefine;
 import org.apache.seatunnel.api.table.converter.TypeConverter;
 import org.apache.seatunnel.api.table.type.BasicType;
 import org.apache.seatunnel.api.table.type.DecimalType;
+import org.apache.seatunnel.api.table.type.GeometryKind;
+import org.apache.seatunnel.api.table.type.GeometryType;
 import org.apache.seatunnel.api.table.type.LocalTimeType;
 import org.apache.seatunnel.api.table.type.PrimitiveByteArrayType;
 import org.apache.seatunnel.common.exception.CommonError;
@@ -105,6 +107,16 @@ public class MySqlTypeConverter implements TypeConverter<BasicTypeDefine<MysqlTy
     public static final String MYSQL_BINARY = "BINARY";
     public static final String MYSQL_VARBINARY = "VARBINARY";
     public static final String MYSQL_GEOMETRY = "GEOMETRY";
+
+    // ------------------------------spatial-------------------------
+    public static final String MYSQL_POINT = "POINT";
+    public static final String MYSQL_LINESTRING = "LINESTRING";
+    public static final String MYSQL_POLYGON = "POLYGON";
+    public static final String MYSQL_MULTIPOINT = "MULTIPOINT";
+    public static final String MYSQL_MULTILINESTRING = "MULTILINESTRING";
+    public static final String MYSQL_MULTIPOLYGON = "MULTIPOLYGON";
+    public static final String MYSQL_GEOMETRYCOLLECTION = "GEOMETRYCOLLECTION";
+    public static final String MYSQL_GEOMCOLLECTION = "GEOMCOLLECTION";
 
     /**
      * Suffix that turns the name of a numeric type into the name of its {@code UNSIGNED} variant,
@@ -373,7 +385,29 @@ public class MySqlTypeConverter implements TypeConverter<BasicTypeDefine<MysqlTy
                 builder.columnLength(POWER_2_32 - 1);
                 break;
             case MYSQL_GEOMETRY:
-                builder.dataType(PrimitiveByteArrayType.INSTANCE);
+                builder.dataType(new GeometryType(GeometryKind.GEOMETRY));
+                break;
+            case MYSQL_POINT:
+                builder.dataType(new GeometryType(GeometryKind.POINT));
+                break;
+            case MYSQL_LINESTRING:
+                builder.dataType(new GeometryType(GeometryKind.LINESTRING));
+                break;
+            case MYSQL_POLYGON:
+                builder.dataType(new GeometryType(GeometryKind.POLYGON));
+                break;
+            case MYSQL_MULTIPOINT:
+                builder.dataType(new GeometryType(GeometryKind.MULTIPOINT));
+                break;
+            case MYSQL_MULTILINESTRING:
+                builder.dataType(new GeometryType(GeometryKind.MULTILINESTRING));
+                break;
+            case MYSQL_MULTIPOLYGON:
+                builder.dataType(new GeometryType(GeometryKind.MULTIPOLYGON));
+                break;
+            case MYSQL_GEOMETRYCOLLECTION:
+            case MYSQL_GEOMCOLLECTION:
+                builder.dataType(new GeometryType(GeometryKind.GEOMETRYCOLLECTION));
                 break;
             case MYSQL_DATE:
                 builder.dataType(LocalTimeType.LOCAL_DATE_TYPE);

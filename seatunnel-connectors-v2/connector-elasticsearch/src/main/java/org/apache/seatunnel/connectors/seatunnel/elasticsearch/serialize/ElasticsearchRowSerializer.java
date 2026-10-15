@@ -20,8 +20,12 @@ package org.apache.seatunnel.connectors.seatunnel.elasticsearch.serialize;
 import org.apache.seatunnel.shade.com.fasterxml.jackson.core.JsonProcessingException;
 import org.apache.seatunnel.shade.com.fasterxml.jackson.databind.ObjectMapper;
 
+import org.apache.seatunnel.api.table.type.Geometry;
+import org.apache.seatunnel.api.table.type.GeometryType;
+import org.apache.seatunnel.api.table.type.SeaTunnelDataType;
 import org.apache.seatunnel.api.table.type.SeaTunnelRow;
 import org.apache.seatunnel.api.table.type.SeaTunnelRowType;
+import org.apache.seatunnel.api.table.type.SqlType;
 import org.apache.seatunnel.common.exception.CommonError;
 import org.apache.seatunnel.common.exception.CommonErrorCodeDeprecated;
 import org.apache.seatunnel.common.utils.VectorUtils;
@@ -187,8 +191,13 @@ public class ElasticsearchRowSerializer implements SeaTunnelRowSerializer {
         Object[] fields = row.getFields();
         for (int i = 0; i < fieldNames.length; i++) {
             Object value = fields[i];
+            SeaTunnelDataType<?> fieldType = rowType.getFieldType(i);
             if (value == null) {
                 doc.put(fieldNames[i], null);
+            } else if (fieldType.getSqlType() == SqlType.GEOMETRY) {
+                doc.put(
+                        fieldNames[i],
+                        toGeometryValue(fieldNames[i], (GeometryType) fieldType, (Geometry) value));
             } else if (value instanceof SeaTunnelRow) {
                 doc.put(
                         fieldNames[i],
@@ -199,6 +208,14 @@ public class ElasticsearchRowSerializer implements SeaTunnelRowSerializer {
             }
         }
         return doc;
+    }
+
+    private static Object toGeometryValue(String fieldName, GeometryType type, Geometry geometry) {
+        try {
+            return GeometryJsonConverter.toOpenSearchValue(type, geometry);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Column [" + fieldName + "]: " + e.getMessage(), e);
+        }
     }
 
     private Object convertValue(String fieldName, Object value) {

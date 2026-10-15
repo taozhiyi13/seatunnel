@@ -178,7 +178,23 @@ show variables where variable_name in ('log_bin', 'binlog_format', 'binlog_row_i
 | DATE                                                                                           | DATE          |
 | TIME(s)                                                                                        | TIME(s)       |
 | DATETIME<br/>TIMESTAMP(s)                                                                      | TIMESTAMP(s)  |
-| BINARY<br/>VARBINAR<br/>BIT(p)<br/>TINYBLOB<br/>MEDIUMBLOB<br/>BLOB<br/>LONGBLOB <br/>GEOMETRY | BYTES         |
+| BINARY<br/>VARBINARY<br/>BIT(p)<br/>TINYBLOB<br/>MEDIUMBLOB<br/>BLOB<br/>LONGBLOB             | BYTES         |
+| GEOMETRY                                                                                      | GEOMETRY(GEOMETRY) |
+| POINT                                                                                         | GEOMETRY(POINT) |
+| LINESTRING                                                                                    | GEOMETRY(LINESTRING) |
+| POLYGON                                                                                       | GEOMETRY(POLYGON) |
+| MULTIPOINT                                                                                    | GEOMETRY(MULTIPOINT) |
+| MULTILINESTRING                                                                               | GEOMETRY(MULTILINESTRING) |
+| MULTIPOLYGON                                                                                  | GEOMETRY(MULTIPOLYGON) |
+| GEOMETRYCOLLECTION<br/>GEOMCOLLECTION                                                         | GEOMETRY(GEOMETRYCOLLECTION) |
+
+MySQL-CDC 会保留空间值的无符号 32 位 SRID 和标准 WKB，不对坐标做转换。MySQL 的全部
+SRID（`0` 至 `4294967295`）均可通过 source 和 SeaTunnel 同步链路。SRID `0` 表示 MySQL
+没有为空间值关联空间参考系。具体 sink 是否接受某个 SRID，由对应 sink 决定。
+
+空间列上声明了 SRID 时（`information_schema.COLUMNS.SRS_ID`，MySQL 8.0 及以上），source 会把它
+以 `srid` 记录到列的 options 中，sink 可以据此在任务提交时拒绝不兼容的列。未声明 SRID 的
+列，以及没有 `SRS_ID` 的 MySQL 版本上的所有空间列，都不带这个 option。空间类型已在 MySQL 8.0 上验证。
 
 ## 配置参数选项
 

@@ -5,6 +5,13 @@ You need to check this document before you upgrade to related version.
 
 ## dev
 
+### MySQL spatial columns
+
+- **Behavior change: MySQL spatial columns are `GEOMETRY` instead of `BYTES`**
+  - **Description**: `GEOMETRY`, `POINT`, `LINESTRING`, `POLYGON`, `MULTIPOINT`, `MULTILINESTRING`, `MULTIPOLYGON`, and `GEOMETRYCOLLECTION` / `GEOMCOLLECTION` were mapped to `BYTES`. MySQL-CDC and the MySQL JDBC source now map them to `GEOMETRY(<kind>)` and carry each value as an unsigned 32-bit SRID plus standard WKB. The Elasticsearch/OpenSearch sink writes `POINT` as `geo_point` and the other kinds as `geo_shape`, and accepts only SRID `4326`.
+  - **Impact**: A job that read these columns as byte arrays now receives `Geometry` values. A sink that does not support `GEOMETRY` rejects the column. Writing a `GEOMETRY` column back to MySQL is not supported.
+  - **Migration Guide**: Use the Elasticsearch/OpenSearch sink for WGS84 coordinates (SRID `4326`). A column that declares another SRID, including `0`, fails when that sink is created. Transform non-WGS84 coordinates before using this sink, or use a sink that accepts the source SRID.
+
 ### CDC: nullable columns are no longer used as the snapshot split column
 
 - **Behavior change: JDBC-based CDC sources (MySQL, PostgreSQL, Oracle, SQL Server, DB2) no longer split the snapshot on a nullable column**
